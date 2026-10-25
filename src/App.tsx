@@ -117,7 +117,7 @@ export function App() {
           </NavLink>
         </nav>
         <span className="version-tag">
-          <span aria-hidden="true">♡</span> M7 · 每一天，都值得收藏
+          <span aria-hidden="true">♡</span> 每一天，都值得收藏
         </span>
       </header>
       <OfflineStatus />
