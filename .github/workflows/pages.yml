@@ -1,0 +1,71 @@
+name: Check and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.site }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [root, project]
+    env:
+      # Empty uses the actual GITHUB_REPOSITORY; explicit root also covers custom domains.
+      VITE_BASE_PATH: ${{ matrix.site == 'root' && '/' || vars.VITE_BASE_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run test:e2e
+      - name: Firefox main-flow smoke
+        run: npm run test:e2e -- e2e/smoke.spec.ts e2e/journey.spec.ts e2e/campus.spec.ts e2e/conditions.spec.ts e2e/recovery.spec.ts --reporter=list --output=test-results/firefox
+        env:
+          PLAYWRIGHT_ENGINE: firefox
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-${{ matrix.site }}
+          path: |
+            playwright-report/
+            test-results/
+            artifacts/
+          retention-days: 7
+      - name: Upload checked Pages build
+        if: matrix.site == 'project' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
